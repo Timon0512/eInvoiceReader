@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xrechnung-reader"
+version = "0.3.1"
+description = "Reader und Flet-Desktopanwendung für EN-16931-/XRechnung-XML in UBL und UN/CEFACT CII"
+requires-python = ">=3.11"
+dependencies = [
+  "lxml>=5.3,<7",
+  "Jinja2>=3.1,<4",
+  "flet>=0.84,<0.85",
+  "fpdf2>=2.8,<3",
+]
+
+[project.scripts]
+xrechnung-reader = "xrechnung_reader.cli:main"
+xrechnung-reader-gui = "xrechnung_app.main:run"
+
+[tool.setuptools.package-data]
+xrechnung_reader = ["templates/*.j2"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["xrechnung_reader*", "xrechnung_app*"]
+
+[tool.flet]
+product = "XRechnungsreader"
+company = "FrameKind"
+org = "de.framekind"
+copyright = "Copyright © 2026 Timon Franz"
+
+[tool.flet.app]
+path = "."
+module = "main"
+exclude = [
+  ".git",
+  ".venv",
+  ".pytest_cache",
+  "tests",
+  "__pycache__",
+]
+
+[tool.flet.cleanup]
+app = true
+packages = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

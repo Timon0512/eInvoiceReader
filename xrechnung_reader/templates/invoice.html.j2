@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rechnung {{ invoice.invoice_number or '' }}</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, Arial, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f5f7; color: #1f2937; }
+    main { max-width: 1120px; margin: 32px auto; padding: 0 20px 48px; }
+    header, section { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 22px; margin-bottom: 18px; }
+    h1, h2 { margin-top: 0; }
+    h1 { margin-bottom: 8px; font-size: 28px; }
+    h2 { font-size: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+    .meta, .two-columns, .totals { display: grid; gap: 12px 24px; }
+    .meta { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .two-columns { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .totals { grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); }
+    .label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .value { margin-top: 4px; font-weight: 600; overflow-wrap: anywhere; }
+    address { font-style: normal; line-height: 1.55; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { color: #4b5563; background: #f9fafb; }
+    td.number, th.number { text-align: right; white-space: nowrap; }
+    .grand-total { font-size: 18px; font-weight: 800; }
+    .warning { border-left: 4px solid #d97706; background: #fffbeb; padding: 10px 12px; margin: 8px 0; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; font-weight: 700; }
+    .muted { color: #6b7280; }
+    pre { white-space: pre-wrap; }
+    @media print {
+      body { background: #fff; }
+      main { max-width: none; margin: 0; padding: 0; }
+      header, section { break-inside: avoid; border-color: #d1d5db; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="badge">{{ invoice.syntax }} · {{ invoice.document_kind }}</span>
+    <h1>Rechnung {{ invoice.invoice_number or 'ohne Nummer' }}</h1>
+    <div class="meta">
+      <div><div class="label">Rechnungsdatum</div><div class="value">{{ invoice.issue_date or '–' }}</div></div>
+      <div><div class="label">Fällig am</div><div class="value">{{ invoice.due_date or '–' }}</div></div>
+      <div><div class="label">Währung</div><div class="value">{{ invoice.currency or '–' }}</div></div>
+      <div><div class="label">Typcode</div><div class="value">{{ invoice.invoice_type_code or '–' }}</div></div>
+      <div><div class="label">Leitweg-/Käuferreferenz</div><div class="value">{{ invoice.buyer_reference or '–' }}</div></div>
+      <div><div class="label">Bestellreferenz</div><div class="value">{{ invoice.order_reference or '–' }}</div></div>
+    </div>
+  </header>
+
+  {% if invoice.warnings %}
+  <section>
+    <h2>Hinweise des Readers</h2>
+    {% for warning in invoice.warnings %}<div class="warning">{{ warning }}</div>{% endfor %}
+    <p class="muted">Diese Hinweise sind keine vollständige fachliche EN-16931-/XRechnung-Validierung.</p>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Rechnungsparteien</h2>
+    <div class="two-columns">
+      {% for title, party in [('Verkäufer', invoice.seller), ('Käufer', invoice.buyer)] %}
+      <div>
+        <h3>{{ title }}</h3>
+        <div class="value">{{ party.name or '–' }}</div>
+        {% if party.trading_name and party.trading_name != party.name %}<div>{{ party.trading_name }}</div>{% endif %}
+        <address>
+          {{ party.address.street or '' }}{% if party.address.additional_street %}<br>{{ party.address.additional_street }}{% endif %}<br>
+          {{ party.address.postal_code or '' }} {{ party.address.city or '' }}<br>
+          {% if party.address.country_subdivision %}{{ party.address.country_subdivision }} · {% endif %}{{ party.address.country_code or '' }}
+        </address>
+        {% if party.vat_identifier %}<div><span class="label">USt-ID</span> {{ party.vat_identifier }}</div>{% endif %}
+        {% if party.identifier %}<div><span class="label">ID</span> {{ party.identifier }}</div>{% endif %}
+        {% if party.electronic_address %}<div><span class="label">Elektronische Adresse</span> {{ party.electronic_address }}{% if party.electronic_address_scheme %} ({{ party.electronic_address_scheme }}){% endif %}</div>{% endif %}
+        {% if party.contact_name or party.contact_email or party.contact_phone %}
+        <div><span class="label">Kontakt</span> {{ party.contact_name or '' }} {{ party.contact_email or '' }} {{ party.contact_phone or '' }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Positionen</h2>
+    <table>
+      <thead><tr><th>Pos.</th><th>Artikel / Beschreibung</th><th class="number">Menge</th><th class="number">Einzelpreis</th><th class="number">Steuer</th><th class="number">Netto</th></tr></thead>
+      <tbody>
+      {% for line in invoice.lines %}
+        <tr>
+          <td>{{ line.line_id or loop.index }}</td>
+          <td><strong>{{ line.item_name or '–' }}</strong>{% if line.description %}<br><span class="muted">{{ line.description }}</span>{% endif %}</td>
+          <td class="number">{{ line.quantity|number }} {{ line.unit_code or '' }}</td>
+          <td class="number">{{ line.unit_price|money }}</td>
+          <td class="number">{{ line.tax_rate|number }}{% if line.tax_rate is not none %} %{% endif %}</td>
+          <td class="number">{{ line.line_net_amount|money }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">Keine Positionen gefunden.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Steuern und Summen</h2>
+    <div class="totals">
+      <div>
+        <table>
+          <thead><tr><th>Kategorie</th><th class="number">Satz</th><th class="number">Basis</th><th class="number">Steuer</th></tr></thead>
+          <tbody>
+          {% for tax in invoice.tax_breakdown %}
+            <tr><td>{{ tax.category_code or '–' }}{% if tax.exemption_reason %}<br><span class="muted">{{ tax.exemption_reason }}</span>{% endif %}</td><td class="number">{{ tax.rate|number }}{% if tax.rate is not none %} %{% endif %}</td><td class="number">{{ tax.taxable_amount|money }}</td><td class="number">{{ tax.tax_amount|money }}</td></tr>
+          {% else %}<tr><td colspan="4">Keine Steueraufschlüsselung gefunden.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <table>
+          <tbody>
+            <tr><td>Positionssumme netto</td><td class="number">{{ invoice.totals.line_net_total|money }}</td></tr>
+            <tr><td>Nachlässe</td><td class="number">{{ invoice.totals.allowance_total|money }}</td></tr>
+            <tr><td>Zuschläge</td><td class="number">{{ invoice.totals.charge_total|money }}</td></tr>
+            <tr><td>Steuerbasis</td><td class="number">{{ invoice.totals.tax_exclusive_total|money }}</td></tr>
+            <tr><td>Steuer</td><td class="number">{{ invoice.totals.tax_total|money }}</td></tr>
+            <tr><td>Bruttosumme</td><td class="number">{{ invoice.totals.tax_inclusive_total|money }}</td></tr>
+            <tr><td>Bereits bezahlt</td><td class="number">{{ invoice.totals.prepaid_total|money }}</td></tr>
+            <tr><td>Rundung</td><td class="number">{{ invoice.totals.rounding_amount|money }}</td></tr>
+            <tr class="grand-total"><td>Zahlbetrag</td><td class="number">{{ invoice.totals.payable_amount|money }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Zahlung</h2>
+    <div class="meta">
+      <div><div class="label">Zahlungsart-Code</div><div class="value">{{ invoice.payment.means_code or '–' }}</div></div>
+      <div><div class="label">Zahlungsreferenz</div><div class="value">{{ invoice.payment.payment_reference or '–' }}</div></div>
+      <div><div class="label">IBAN / Konto</div><div class="value">{{ invoice.payment.iban or '–' }}</div></div>
+    </div>
+    {% if invoice.payment.terms %}<pre>{{ invoice.payment.terms }}</pre>{% endif %}
+  </section>
+
+  {% if invoice.notes %}
+  <section><h2>Rechnungshinweise</h2>{% for note in invoice.notes %}<p>{{ note }}</p>{% endfor %}</section>
+  {% endif %}
+
+  <section>
+    <h2>Technische Metadaten</h2>
+    <div><span class="label">Spezifikation</span><div class="value">{{ invoice.specification_id or '–' }}</div></div>
+    <div><span class="label">Geschäftsprozess</span><div class="value">{{ invoice.business_process_id or '–' }}</div></div>
+    <div><span class="label">Quelldatei</span><div class="value">{{ invoice.source_file }}</div></div>
+  </section>
+</main>
+</body>
+</html>
