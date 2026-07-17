@@ -1,0 +1,3 @@
+[console_scripts]
+xrechnung-reader = xrechnung_reader.cli:main
+xrechnung-reader-gui = xrechnung_app.main:run
