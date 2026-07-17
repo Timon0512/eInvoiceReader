@@ -35,26 +35,14 @@ Das Hauptfenster ist nur der Launcher:
 
 Diese Trennung ist bewusst gewählt, damit jedes Rechnungsfenster einen eigenen Zustand und eigene Exportdialoge besitzt.
 
-## Installation unter Windows
+## Onefile Build unter windows mit nuitka
 
 Voraussetzungen:
 
 - Python 3.11 oder neuer
-- Für einen Release-Build: Visual Studio mit dem Workload **Desktopentwicklung mit C++**
-
 ```powershell
-cd xrechnung_reader_with_flet_multi
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-Für Tests:
-
-```powershell
-python -m pip install -r requirements-dev.txt
-pytest
+ pip install -U nuitka
+ python -m nuitka --standalone --onefile --disable-console --include-package-data=flet main.py
 ```
 
 ## Frontend starten
@@ -76,6 +64,12 @@ Alternativ nach Installation des Projekts:
 ```powershell
 python -m pip install -e .
 xrechnung-reader-gui
+```
+
+Oder über das mitgelieferte .exe build:
+
+```powershell
+.\exe build\main.exe
 ```
 
 ### Mehrere Dateien öffnen
