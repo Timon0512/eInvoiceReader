@@ -1,7 +1,9 @@
+import asyncio
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
+import xrechnung_app.main as frontend_main
 from xrechnung_app.formatting import german_date, money, party_lines
 from xrechnung_app.launcher import XRechnungLauncherApp
 from xrechnung_app.main import parse_args, resolve_invoice_path
@@ -10,6 +12,7 @@ from xrechnung_app.processes import (
     build_child_environment,
     build_invoice_process_command,
     is_packaged_flet_runtime,
+    launch_invoice_window,
     normalise_selected_paths,
 )
 from xrechnung_reader.models import Address, InvoiceDocument, InvoiceLine, Party
@@ -74,6 +77,42 @@ def test_packaged_runtime_detection() -> None:
     assert not is_packaged_flet_runtime({})
 
 
+def test_nuitka_runtime_detection(monkeypatch) -> None:
+    monkeypatch.setitem(
+        is_packaged_flet_runtime.__globals__,
+        "__compiled__",
+        SimpleNamespace(),
+    )
+
+    assert is_packaged_flet_runtime({})
+
+
+def test_packaged_window_launch_does_not_use_extraction_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text("<Invoice/>", encoding="utf-8")
+    popen_calls: list[tuple[list[str], dict[str, object]]] = []
+    fake_process = SimpleNamespace()
+
+    def fake_popen(command: list[str], **kwargs: object):
+        popen_calls.append((command, kwargs))
+        return fake_process
+
+    monkeypatch.setattr("xrechnung_app.processes.subprocess.Popen", fake_popen)
+
+    result = launch_invoice_window(
+        invoice,
+        executable=r"Z:\\Programme\\XRechnungsreader.exe",
+        packaged=True,
+    )
+
+    assert result is fake_process
+    assert popen_calls[0][0] == [r"Z:\\Programme\\XRechnungsreader.exe"]
+    assert "cwd" not in popen_calls[0][1]
+    assert popen_calls[0][1]["env"][INVOICE_ENV_VAR] == str(invoice.resolve())
+
+
 def test_invoice_argument_is_parsed(tmp_path: Path) -> None:
     invoice = tmp_path / "invoice.xml"
     args = parse_args(["--invoice", str(invoice)])
@@ -84,6 +123,45 @@ def test_invoice_path_can_come_from_environment(tmp_path: Path) -> None:
     invoice = tmp_path / "invoice.xml"
     resolved = resolve_invoice_path([], {INVOICE_ENV_VAR: str(invoice)})
     assert resolved == invoice
+
+
+def test_invoice_window_gets_temporary_initial_priority(
+    tmp_path: Path, monkeypatch
+) -> None:
+    invoice = tmp_path / "invoice.xml"
+    events: list[str] = []
+
+    class FakeWindow:
+        always_on_top = False
+        focused = False
+
+        async def wait_until_ready_to_show(self) -> None:
+            events.append("ready")
+
+        async def to_front(self) -> None:
+            events.append("front")
+
+    page = SimpleNamespace(
+        window=FakeWindow(),
+        update=lambda: events.append("update"),
+    )
+
+    monkeypatch.setattr(
+        frontend_main,
+        "InvoiceWindowApp",
+        lambda _page, path: events.append(f"app:{path.name}"),
+    )
+
+    async def no_delay(seconds: float) -> None:
+        events.append(f"delay:{seconds:g}")
+
+    monkeypatch.setattr(frontend_main.asyncio, "sleep", no_delay)
+
+    asyncio.run(frontend_main.invoice_main(invoice)(page))
+
+    assert page.window.focused is True
+    assert page.window.always_on_top is False
+    assert events == ["app:invoice.xml", "ready", "front", "delay:1", "update"]
 
 
 
