@@ -151,8 +151,8 @@ class InvoiceWindowApp:
                                 on_click=self._save_json,
                             ),
                             ft.TextButton(
-                                "Rechnung entfernen",
-                                icon=ft.Icons.DELETE_OUTLINE,
+                                "Rechnung schließen",
+                                icon=ft.Icons.CLOSE,
                                 on_click=self._remove_invoice,
                                 style=ft.ButtonStyle(color=ft.Colors.RED_700),
                             ),

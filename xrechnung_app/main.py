@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -38,7 +39,17 @@ async def launcher_main(page: ft.Page) -> None:
 
 def invoice_main(invoice_path: Path):
     async def _main(page: ft.Page) -> None:
+        # Give a newly opened invoice precedence over the launcher while it is
+        # being shown. The topmost flag is released again below so the invoice
+        # behaves like a normal application window afterwards.
+        page.window.always_on_top = True
+        page.window.focused = True
         InvoiceWindowApp(page, invoice_path)
+        await page.window.wait_until_ready_to_show()
+        await page.window.to_front()
+        await asyncio.sleep(1)
+        page.window.always_on_top = False
+        page.update()
 
     return _main
 

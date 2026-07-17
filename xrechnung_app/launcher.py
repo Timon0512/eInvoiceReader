@@ -31,8 +31,8 @@ class XRechnungLauncherApp:
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
         self.page.bgcolor = ft.Colors.GREY_50
-        self.page.window.width = 820
-        self.page.window.height = 620
+        self.page.window.width = 720
+        self.page.window.height = 650
         self.page.window.min_width = 680
         self.page.window.min_height = 500
 
@@ -147,10 +147,11 @@ class XRechnungLauncherApp:
                         ],
                         spacing=12,
                     ),
-                    ft.Text(
-                        "Mehrfachauswahl",
-                        color=ft.Colors.GREY_600,
-                    ),
+                    #### HEADER OBEN LINKS ####
+                    # ft.Text(
+                    #     "Mehrfachauswahl",
+                    #     color=ft.Colors.GREY_600,
+                    # ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
