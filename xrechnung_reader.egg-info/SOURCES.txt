@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 tests/test_frontend_support.py
 tests/test_reader.py
+tests/test_xml_view.py
 xrechnung_app/__init__.py
 xrechnung_app/app.py
 xrechnung_app/formatting.py
@@ -9,6 +10,7 @@ xrechnung_app/launcher.py
 xrechnung_app/main.py
 xrechnung_app/processes.py
 xrechnung_app/state.py
+xrechnung_app/xml_view.py
 xrechnung_reader/__init__.py
 xrechnung_reader/__main__.py
 xrechnung_reader/cli.py

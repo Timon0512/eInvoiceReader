@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 import flet as ft
+from lxml import etree
 
 from xrechnung_reader import (
     InvalidInvoiceError,
@@ -17,6 +18,13 @@ from xrechnung_reader.pdf import render_pdf
 
 from .formatting import display, german_date, money, number, party_lines, percent
 from .state import AppState
+from .xml_view import (
+    PreparedXmlDocument,
+    XmlNodeInfo,
+    prepare_xml_document,
+    xml_child_nodes,
+    xml_node_info,
+)
 
 
 class InvoiceWindowApp:
@@ -411,39 +419,259 @@ class InvoiceWindowApp:
 
     def _xml_tab(self) -> ft.Control:
         xml = self.state.original_xml or ""
+        prepared: PreparedXmlDocument | None = None
+        formatted_xml = xml
+        preparation_error: str | None = None
+        try:
+            prepared = prepare_xml_document(xml)
+            formatted_xml = prepared.formatted_source
+        except (etree.XMLSyntaxError, ValueError) as exc:
+            preparation_error = str(exc)
+
+        tree_view = ft.Container(
+            visible=True,
+            expand=True,
+            bgcolor=ft.Colors.WHITE,
+            border=ft.Border.all(1, ft.Colors.GREY_200),
+            border_radius=ft.BorderRadius.all(10),
+            padding=ft.Padding.all(10),
+            content=(
+                ft.Column(
+                    controls=[self._xml_node_control(prepared.root, (), expanded=True)],
+                    spacing=0,
+                    scroll=ft.ScrollMode.AUTO,
+                    expand=True,
+                )
+                if prepared is not None
+                else ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.ERROR_OUTLINE, color=ft.Colors.RED_700),
+                                ft.Text(
+                                    "Die Baumansicht konnte nicht aufgebaut werden.",
+                                    weight=ft.FontWeight.BOLD,
+                                ),
+                            ]
+                        ),
+                        ft.Text(preparation_error or "Unbekannter XML-Fehler", selectable=True),
+                    ],
+                    spacing=10,
+                )
+            ),
+        )
+        source_view = ft.Container(
+            visible=False,
+            expand=True,
+            bgcolor=ft.Colors.BLUE_GREY_900,
+            border_radius=ft.BorderRadius.all(10),
+            padding=ft.Padding.all(16),
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                formatted_xml,
+                                selectable=True,
+                                font_family="monospace",
+                                size=12,
+                                color=ft.Colors.BLUE_GREY_50,
+                                no_wrap=True,
+                            )
+                        ],
+                        scroll=ft.ScrollMode.AUTO,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    )
+                ],
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
+            ),
+        )
+
+        def switch_view(event) -> None:
+            selected = event.control.selected
+            show_tree = not selected or selected[0] == "tree"
+            tree_view.visible = show_tree
+            source_view.visible = not show_tree
+            tree_view.update()
+            source_view.update()
+
         return ft.Container(
             padding=ft.Padding.all(16),
             content=ft.Column(
                 controls=[
                     ft.Row(
                         controls=[
-                            ft.Text("Original-XML", size=18, weight=ft.FontWeight.BOLD),
+                            ft.Column(
+                                controls=[
+                                    ft.Text("XML-Struktur", size=18, weight=ft.FontWeight.BOLD),
+                                    ft.Text(
+                                        "Elemente aufklappen oder zum formatierten "
+                                        "Quelltext wechseln.",
+                                        size=12,
+                                        color=ft.Colors.GREY_600,
+                                    ),
+                                ],
+                                spacing=2,
+                            ),
                             ft.IconButton(
                                 icon=ft.Icons.CONTENT_COPY,
-                                tooltip="XML kopieren",
-                                on_click=self._clipboard_handler(xml, "XML wurde kopiert."),
+                                tooltip="Original-XML kopieren",
+                                on_click=self._clipboard_handler(
+                                    xml,
+                                    "Original-XML wurde kopiert.",
+                                ),
                             ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
-                    ft.Container(
-                        bgcolor=ft.Colors.BLUE_GREY_900,
-                        border_radius=ft.BorderRadius.all(10),
-                        padding=ft.Padding.all(16),
-                        content=ft.Text(
-                            xml,
-                            selectable=True,
-                            font_family="monospace",
-                            size=12,
-                            color=ft.Colors.BLUE_GREY_50,
-                            no_wrap=True,
-                        ),
+                    ft.SegmentedButton(
+                        selected=["tree"],
+                        show_selected_icon=False,
+                        segments=[
+                            ft.Segment(
+                                value="tree",
+                                icon=ft.Icons.ACCOUNT_TREE_OUTLINED,
+                                label="Baum",
+                            ),
+                            ft.Segment(
+                                value="source",
+                                icon=ft.Icons.CODE,
+                                label="Quelltext",
+                            ),
+                        ],
+                        on_change=switch_view,
                     ),
+                    tree_view,
+                    source_view,
                 ],
-                scroll=ft.ScrollMode.AUTO,
+                spacing=12,
                 expand=True,
             ),
         )
+
+    def _xml_node_control(
+        self,
+        node,
+        parent_path: tuple[str, ...],
+        *,
+        expanded: bool = False,
+    ) -> ft.Control:
+        info = xml_node_info(node, parent_path)
+        children = xml_child_nodes(node)
+        if not children:
+            return self._xml_leaf_control(info)
+
+        loaded = False
+        tile: ft.ExpansionTile
+
+        def load_children() -> None:
+            nonlocal loaded
+            if loaded:
+                return
+            tile.controls = [
+                self._xml_node_control(child, info.path)
+                for child in children
+            ]
+            loaded = True
+
+        def handle_expansion(event) -> None:
+            is_expanded = event.data is True or str(event.data).lower() == "true"
+            if is_expanded and not loaded:
+                load_children()
+                tile.update()
+
+        details = self._xml_node_details(info)
+        tile = ft.ExpansionTile(
+            title=self._xml_node_title(info),
+            subtitle=details,
+            controls=[],
+            expanded=expanded,
+            affinity=ft.TileAffinity.LEADING,
+            dense=True,
+            maintain_state=True,
+            min_tile_height=44,
+            tile_padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+            controls_padding=ft.Padding.only(left=22),
+            expanded_cross_axis_alignment=ft.CrossAxisAlignment.START,
+            text_color=ft.Colors.BLUE_800,
+            icon_color=ft.Colors.BLUE_700,
+            collapsed_text_color=ft.Colors.BLUE_GREY_900,
+            collapsed_icon_color=ft.Colors.BLUE_GREY_600,
+            on_change=handle_expansion,
+        )
+        if expanded:
+            load_children()
+        return tile
+
+    def _xml_leaf_control(self, info: XmlNodeInfo) -> ft.Control:
+        details = self._xml_node_details(info)
+        controls: list[ft.Control] = [self._xml_node_title(info)]
+        if details is not None:
+            controls.append(details)
+        return ft.Container(
+            border=ft.Border(left=ft.BorderSide(2, ft.Colors.BLUE_GREY_200)),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=7),
+            content=ft.Column(controls=controls, spacing=3),
+        )
+
+    @staticmethod
+    def _xml_node_title(info: XmlNodeInfo) -> ft.Control:
+        display_name = f"<{info.name}>" if info.kind == "element" else info.name
+        controls: list[ft.Control] = [
+            ft.Text(
+                display_name,
+                selectable=True,
+                font_family="monospace",
+                size=13,
+                weight=ft.FontWeight.W_600,
+                color=(
+                    ft.Colors.GREEN_800
+                    if info.kind != "element"
+                    else ft.Colors.BLUE_800
+                ),
+            )
+        ]
+        if info.description:
+            controls.append(
+                ft.Text(
+                    f"— {info.description}",
+                    selectable=True,
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_600,
+                )
+            )
+        return ft.Row(controls=controls, spacing=8, wrap=True)
+
+    @staticmethod
+    def _xml_node_details(info: XmlNodeInfo) -> ft.Control | None:
+        controls: list[ft.Control] = []
+        if info.attributes:
+            attributes = "  ".join(
+                f'{attribute.name}="{attribute.value}"'
+                for attribute in info.attributes
+            )
+            controls.append(
+                ft.Text(
+                    attributes,
+                    selectable=True,
+                    font_family="monospace",
+                    size=11,
+                    color=ft.Colors.DEEP_ORANGE_700,
+                )
+            )
+        if info.text:
+            controls.append(
+                ft.Text(
+                    info.text,
+                    selectable=True,
+                    size=12,
+                    color=ft.Colors.BLUE_GREY_900,
+                )
+            )
+        if not controls:
+            return None
+        return ft.Column(controls=controls, spacing=2)
 
     def _messages_tab(self) -> ft.Control:
         invoice = self._require_invoice()
